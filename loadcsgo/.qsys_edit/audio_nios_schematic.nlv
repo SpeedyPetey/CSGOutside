@@ -1,0 +1,48 @@
+# # File gsaved with Nlview version 6.3.8  2013-12-19 bk=1.2992 VDI=34 GEI=35
+# 
+preplace inst audio_nios.timer_0 -pg 1 -lvl 6 -y 780
+preplace inst audio_nios.sdram -pg 1 -lvl 7 -y 90
+preplace inst audio_nios.nios2_gen2_0.reset_bridge -pg 1
+preplace inst audio_nios.i2c_sda -pg 1 -lvl 7 -y 1010
+preplace inst audio_nios -pg 1 -lvl 1 -y 40 -regy -20
+preplace inst audio_nios.pll -pg 1 -lvl 2 -y 690
+preplace inst audio_nios.cpu_peripheral_bridge -pg 1 -lvl 6 -y 1030
+preplace inst audio_nios.altpll_audio -pg 1 -lvl 6 -y 460
+preplace inst audio_nios.onchip_memory2 -pg 1 -lvl 6 -y 930
+preplace inst audio_nios.nios2_gen2_0.cpu -pg 1
+preplace inst audio_nios.i2c_scl -pg 1 -lvl 7 -y 1310
+preplace inst audio_nios.hex210 -pg 1 -lvl 6 -y 40
+preplace inst audio_nios.sysid_qsys -pg 1 -lvl 7 -y 270
+preplace inst audio_nios.WIFI -pg 1 -lvl 7 -y 860
+preplace inst audio_nios.LEDs -pg 1 -lvl 6 -y 160
+preplace inst audio_nios.timer -pg 1 -lvl 7 -y 450
+preplace inst audio_nios.audio -pg 1 -lvl 7 -y 550
+preplace inst audio_nios.jtag_uart -pg 1 -lvl 6 -y 640
+preplace inst audio_nios.nios2_gen2_0.clock_bridge -pg 1
+preplace inst audio_nios.KEYs -pg 1 -lvl 6 -y 260
+preplace inst audio_nios.nios2_gen2_0 -pg 1 -lvl 5 -y 770
+preplace inst audio_nios.clk_50 -pg 1 -lvl 1 -y 670
+preplace netloc EXPORT<net_container>audio_nios</net_container>(SLAVE)KEYs.external_connection,(SLAVE)audio_nios.key) 1 0 6 NJ 290 NJ 290 NJ 290 NJ 290 NJ 290 NJ
+preplace netloc POINT_TO_POINT<net_container>audio_nios</net_container>(MASTER)altpll_audio.outclk0,(SLAVE)audio.clock_sink) 1 6 1 2330
+preplace netloc EXPORT<net_container>audio_nios</net_container>(SLAVE)audio_nios.reset,(SLAVE)clk_50.clk_in_reset) 1 0 1 NJ
+preplace netloc EXPORT<net_container>audio_nios</net_container>(SLAVE)audio_nios.i2c_sda_external_connection,(SLAVE)i2c_sda.external_connection) 1 0 7 NJ 1040 NJ 1040 NJ 1040 NJ 1040 NJ 1080 NJ 1180 NJ
+preplace netloc EXPORT<net_container>audio_nios</net_container>(MASTER)pll.outclk1,(MASTER)audio_nios.pll_sdam) 1 2 6 NJ 610 NJ 610 NJ 610 NJ 630 NJ 660 NJ
+preplace netloc EXPORT<net_container>audio_nios</net_container>(SLAVE)hex210.external_connection,(SLAVE)audio_nios.hex210) 1 0 6 NJ 70 NJ 70 NJ 70 NJ 70 NJ 70 NJ
+preplace netloc FAN_OUT<net_container>audio_nios</net_container>(SLAVE)WIFI.interrupt,(SLAVE)timer.irq,(SLAVE)jtag_uart.irq,(MASTER)nios2_gen2_0.irq,(SLAVE)KEYs.irq,(SLAVE)timer_0.irq) 1 5 2 2100 750 2430
+preplace netloc EXPORT<net_container>audio_nios</net_container>(SLAVE)audio_nios.altpll_audio_locked,(SLAVE)altpll_audio.locked) 1 0 6 NJ 470 NJ 470 NJ 470 NJ 470 NJ 470 NJ
+preplace netloc EXPORT<net_container>audio_nios</net_container>(SLAVE)audio_nios.leds,(SLAVE)LEDs.external_connection) 1 0 6 NJ 190 NJ 190 NJ 190 NJ 190 NJ 190 NJ
+preplace netloc EXPORT<net_container>audio_nios</net_container>(SLAVE)audio_nios.clk,(SLAVE)clk_50.clk_in) 1 0 1 NJ
+preplace netloc FAN_OUT<net_container>audio_nios</net_container>(SLAVE)i2c_sda.s1,(SLAVE)timer_0.s1,(SLAVE)i2c_scl.s1,(SLAVE)hex210.s1,(SLAVE)WIFI.avalon_rs232_slave,(SLAVE)LEDs.s1,(MASTER)cpu_peripheral_bridge.m0,(SLAVE)KEYs.s1) 1 5 2 2120 890 2350
+preplace netloc FAN_OUT<net_container>audio_nios</net_container>(SLAVE)hex210.clk,(MASTER)pll.outclk2,(SLAVE)i2c_scl.clk,(SLAVE)i2c_sda.clk,(SLAVE)LEDs.clk,(SLAVE)cpu_peripheral_bridge.m0_clk,(SLAVE)KEYs.clk) 1 2 5 NJ 670 NJ 670 NJ 670 2000 1020 2330
+preplace netloc EXPORT<net_container>audio_nios</net_container>(SLAVE)i2c_scl.external_connection,(SLAVE)audio_nios.i2c_scl_external_connection) 1 0 7 NJ 1340 NJ 1340 NJ 1340 NJ 1340 NJ 1340 NJ 1340 NJ
+preplace netloc EXPORT<net_container>audio_nios</net_container>(SLAVE)audio_nios.audio_conduit_end,(SLAVE)audio.conduit_end) 1 0 7 NJ 550 NJ 550 NJ 550 NJ 550 NJ 550 NJ 550 NJ
+preplace netloc INTERCONNECT<net_container>audio_nios</net_container>(MASTER)nios2_gen2_0.data_master,(SLAVE)jtag_uart.avalon_jtag_slave,(SLAVE)nios2_gen2_0.debug_mem_slave,(MASTER)nios2_gen2_0.instruction_master,(SLAVE)timer.s1,(SLAVE)audio.avalon_slave,(SLAVE)cpu_peripheral_bridge.s0,(SLAVE)sysid_qsys.control_slave,(SLAVE)onchip_memory2.s1,(SLAVE)sdram.s1) 1 4 3 1340 910 2020 590 2410
+preplace netloc FAN_OUT<net_container>audio_nios</net_container>(SLAVE)sdram.clk,(SLAVE)timer.clk,(SLAVE)timer_0.clk,(SLAVE)jtag_uart.clk,(SLAVE)onchip_memory2.clk1,(SLAVE)sysid_qsys.clk,(SLAVE)nios2_gen2_0.clk,(MASTER)pll.outclk0,(SLAVE)cpu_peripheral_bridge.s0_clk) 1 2 5 NJ 650 NJ 650 1340 710 2060 610 2350
+preplace netloc FAN_OUT<net_container>audio_nios</net_container>(SLAVE)altpll_audio.refclk,(MASTER)clk_50.clk,(SLAVE)pll.refclk) 1 1 5 430 630 NJ 630 NJ 630 NJ 630 1960
+preplace netloc EXPORT<net_container>audio_nios</net_container>(SLAVE)pll.locked,(SLAVE)audio_nios.pll_locked) 1 0 2 NJ 740 NJ
+preplace netloc INTERCONNECT<net_container>audio_nios</net_container>(MASTER)clk_50.clk_reset,(MASTER)nios2_gen2_0.debug_reset_request,(SLAVE)jtag_uart.reset,(SLAVE)WIFI.reset,(SLAVE)audio.clock_sink_reset,(SLAVE)nios2_gen2_0.reset,(SLAVE)hex210.reset,(SLAVE)sdram.reset,(SLAVE)sysid_qsys.reset,(SLAVE)timer.reset,(SLAVE)cpu_peripheral_bridge.m0_reset,(SLAVE)KEYs.reset,(SLAVE)LEDs.reset,(SLAVE)i2c_sda.reset,(SLAVE)i2c_scl.reset,(SLAVE)pll.reset,(SLAVE)altpll_audio.reset,(SLAVE)cpu_peripheral_bridge.s0_reset,(SLAVE)onchip_memory2.reset1,(SLAVE)timer_0.reset) 1 1 6 390 800 NJ 800 NJ 800 1320 730 2080 570 2390
+preplace netloc EXPORT<net_container>audio_nios</net_container>(SLAVE)audio_nios.wifi,(SLAVE)WIFI.external_interface) 1 0 7 NJ 950 NJ 950 NJ 950 NJ 950 NJ 950 NJ 910 NJ
+preplace netloc EXPORT<net_container>audio_nios</net_container>(SLAVE)audio_nios.sdram_wire,(SLAVE)sdram.wire) 1 0 7 NJ 40 NJ 40 NJ 40 NJ 40 NJ 40 NJ 30 NJ
+preplace netloc POINT_TO_POINT<net_container>audio_nios</net_container>(SLAVE)WIFI.clk,(MASTER)pll.outclk3) 1 2 5 NJ 760 NJ 760 NJ 690 NJ 770 2370
+levelinfo -pg 1 0 180 2690
+levelinfo -hier audio_nios 190 220 510 820 1280 1720 2180 2460 2610

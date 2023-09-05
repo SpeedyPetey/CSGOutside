@@ -1,0 +1,580 @@
+//key0 reset, key1 record, key2 plant, key3 defuse
+#include "my_includes.h"
+#include "AUDIO.h"
+#include <math.h>
+#include <stdio.h>
+#include "string.h"
+#include <system.h>
+#include "altera_avalon_pio_regs.h"
+#include <altera_avalon_timer_regs.h>
+#include "altera_up_avalon_rs232.h"
+#include "altera_up_avalon_rs232_regs.h"
+#include "sys/alt_irq.h"
+#include "alt_types.h"
+
+#define RECORD_BLOCK_SIZE   250    // ADC FIFO: 512 byte
+#define PLAY_BLOCK_SIZE     250    // DAC FIFO: 512 byte
+#define MAX_TRY_CNT         1024
+#define LINEOUT_DEFUALT_VOL 0x79  // 0 dB
+#define USE_SDRAM_FOR_DATA
+
+typedef enum{
+    LINEIN_RECORD,
+    LINEOUT_PLAY
+}AUDIO_FUNC;
+typedef enum{
+    ST_STANDY,
+    ST_RECODING,
+    ST_GAMEREADY,
+	ST_WAITING,
+    ST_ATTACK,
+    ST_PLANTING,
+    ST_PLANTED,
+    ST_DEFUSING,
+    ST_GAMEOVER,
+    ST_DEFUSED
+}STATE;
+STATE state = ST_STANDY;
+
+//function definitions
+bool init_audio(AUDIO_FUNC audio_func);
+void init_timer_interrupt( void );
+static void timer_isr( void * context, alt_u32 id );
+void display_number(int number);
+int convert_to_seg(int number);
+void choose_audio(STATE state);
+void play_audio();
+
+void sendConnect();
+void sendmsg(char* msg);
+int plantled(int number);
+int defuseled(int number);
+void readfromlua();
+
+
+// global variables
+int numberOfInterrupts = 100; //100=1sec
+int planting = 0;
+int defusing = 0;
+int ticking = 45;
+int cliplength = 0;
+int onesec = 100000;
+int startclip = 0;
+int offset = 20000;
+int countdown = 100;
+alt_up_rs232_dev* rs232_dev;
+char* statemsg;
+//for reading data
+int readabledata = 0;
+char readdata, parity_error;
+char totaldata[12];
+int datalen = 0;
+
+
+alt_u32 *pBuf, *pPlaying, *pRecording, RecordLen, PlayLen, data, try_cnt, buf_sample_size;
+alt_u16 ch_right, ch_left;
+
+alt_u32 *beeppPlaying;
+alt_u32 beepPlayLen;
+int beepcliplength;
+alt_u32 beepdata;
+int beepstartclip=0;
+
+int main(){
+    printf("Hello from Nios II!\n");
+    // Enable the timer
+    init_timer_interrupt();
+    IOWR_ALTERA_AVALON_PIO_DATA(LEDS_BASE, 0x0);
+    display_number(countdown);
+
+    //Set up wifi
+    rs232_dev = alt_up_rs232_open_dev(WIFI_NAME);
+    if (rs232_dev == NULL)
+        printf("Error: could not open RS232 UART\n");
+    else
+        printf("Opened RS232 UART device\n");
+    sendConnect();
+
+    
+    if (!init())
+        return 0;
+        
+    
+#ifdef USE_SDRAM_FOR_DATA
+    pBuf = (alt_u32 *)SDRAM_BASE;
+    buf_sample_size = SDRAM_SPAN/sizeof(alt_u32);
+#endif    
+    printf("ready\n");
+    
+    
+    // test
+    RecordLen = buf_sample_size;
+    printf("Press key1 to start recording audio or wait for signal from server\n");
+    
+    while (1){
+        readfromlua();
+	    switch (state){
+            case ST_STANDY:
+                if (IORD_ALTERA_AVALON_PIO_DATA(KEYS_BASE) == 13){
+                    AUDIO_FifoClear();
+                    init_audio(LINEIN_RECORD);
+                    AUDIO_FifoClear();
+                    state = ST_RECODING;
+                    printf("Recording audio\n");
+                    printf("Press key1 to stop recording audio\n");
+                    pRecording = pBuf;
+                    RecordLen = 0;
+                }
+                if (datalen >= 2){
+                    char str2[] = "at";
+                    int equal = 1;
+                    for(int j =0; j<datalen; j++){
+                    	if (totaldata[j] != str2[j]){
+                    		equal=0;
+                    		break;
+                    	}
+                    }
+                    if (equal){
+                    	printf("Game Start\n");
+                        statemsg = "Game Start";
+                        sendmsg(statemsg);
+                        AUDIO_FifoClear();
+                        init_audio(LINEOUT_PLAY);
+                        AUDIO_FifoClear();
+                    	state = ST_ATTACK;
+                    }
+                }
+                break;
+            case ST_RECODING:
+                if ((IORD_ALTERA_AVALON_PIO_DATA(KEYS_BASE) == 13) || (RecordLen >= buf_sample_size)){
+                    // stop record
+                    printf("Recording stopped\n");
+                    state = ST_WAITING;
+                    AUDIO_FifoClear();
+                    init_audio(LINEOUT_PLAY);
+                    AUDIO_FifoClear();
+                }else{
+                    // continue recoding
+                    int i = 0;
+                    while ((i < RECORD_BLOCK_SIZE)){
+                        
+                        try_cnt = 0;
+                        while (!AUDIO_AdcFifoNotEmpty() && try_cnt < MAX_TRY_CNT){ // wait while empty
+                            try_cnt++;    
+                            if (IORD_ALTERA_AVALON_PIO_DATA(KEYS_BASE) == 13){
+                                break;
+                            }
+                        }     
+                        AUDIO_AdcFifoGetData(&ch_left, &ch_right);
+                        data = (ch_left << 16) | ch_right;
+                        *pRecording++ = data;
+                        RecordLen++;
+                        i++;
+                    }
+                }     
+                break;
+
+            case ST_WAITING:
+                if (datalen >= 2){
+                    char str2[] = "at";
+                    int equal = 1;
+                    for(int j =0; j<datalen; j++){
+                    	if (totaldata[j] != str2[j]){
+                    		equal=0;
+                    		break;
+                    	}
+                    }
+                    if (equal){
+                    	printf("Game Start\n");
+                        statemsg = "Game Start";
+                        sendmsg(statemsg);
+                    	state = ST_ATTACK;
+                    }
+                }
+                break;
+            case ST_ATTACK:
+                planting=0;
+            	IOWR_ALTERA_AVALON_PIO_DATA(LEDS_BASE, 0x00);
+            	if (countdown <= 0){
+            		 printf("Time Expired\n");
+            		 state = ST_GAMEOVER;
+            		 statemsg = "Time expired";
+            		 sendmsg(statemsg);
+            	}
+                else if (IORD_ALTERA_AVALON_PIO_DATA(KEYS_BASE) == 7){
+                    printf("Planting...\n");
+                    state = ST_PLANTING;
+                    statemsg = "planting";
+                    sendmsg(statemsg);
+                    choose_audio(ST_PLANTING);
+                }
+                display_number(countdown);
+                break;
+            case ST_PLANTING:
+                play_audio();
+                IOWR_ALTERA_AVALON_PIO_DATA(LEDS_BASE, plantled(planting));
+                if (countdown <= 0){
+            		 printf("Time Expired\n");
+            		 state = ST_GAMEOVER;
+            		 statemsg = "Time expired";
+            		 sendmsg(statemsg);
+            	}
+                else if (IORD_ALTERA_AVALON_PIO_DATA(KEYS_BASE) != 7){
+                    printf("Got off\n");
+                    state = ST_ATTACK;
+                    statemsg = "pgotoff";
+                    sendmsg(statemsg);
+                } else if (planting >= 4){
+                    printf("Planted\n");
+                    state = ST_PLANTED;
+                    statemsg = "planted";
+                    sendmsg(statemsg);
+                    choose_audio(ST_PLANTED);
+                }
+                display_number(countdown);
+                break;
+            case ST_PLANTED:
+                defusing=0;
+                play_audio();
+            IOWR_ALTERA_AVALON_PIO_DATA(LEDS_BASE, ticking%2==0 ? 0x2aa : 0x155);
+                if (ticking <= 0){
+                    printf("Exploded!");
+                    state = ST_GAMEOVER;
+                    statemsg = "exploded";
+                    sendmsg(statemsg);
+                    choose_audio(ST_GAMEOVER);
+                    IOWR_ALTERA_AVALON_PIO_DATA(LEDS_BASE, 0x3ff);
+                }
+                else if (IORD_ALTERA_AVALON_PIO_DATA(KEYS_BASE) == 11){
+                    printf("Defusing...\n");
+                    state = ST_DEFUSING;
+                    statemsg = "defusing";
+                    sendmsg(statemsg);
+                    //choose_audio(ST_DEFUSING);
+                    beeppPlaying = pBuf + 5*onesec;// + offset;
+                    beepPlayLen = 5*onesec;// + offset;
+                    beepcliplength = onesec*0.55;
+                    beepstartclip = beepPlayLen;
+                }
+                display_number(ticking);
+                break;
+            case ST_DEFUSING:
+                play_audio();
+                IOWR_ALTERA_AVALON_PIO_DATA(LEDS_BASE, defuseled(defusing));
+                if (ticking <= 0){
+                    printf("Exploded!");
+                    state = ST_GAMEOVER;
+                    statemsg = "exploded";
+                    sendmsg(statemsg);
+                    choose_audio(ST_GAMEOVER);
+                    IOWR_ALTERA_AVALON_PIO_DATA(LEDS_BASE, 0x3ff);
+                }
+                else if (IORD_ALTERA_AVALON_PIO_DATA(KEYS_BASE) != 11){
+                    printf("Got off\n");
+                    state = ST_PLANTED;
+                    statemsg = "dgotoff";
+                    sendmsg(statemsg);
+
+                } else if (defusing >= 7){
+                    printf("Defused\n");
+                    state = ST_DEFUSED;
+                    statemsg = "defused";
+                    sendmsg(statemsg);
+                    IOWR_ALTERA_AVALON_PIO_DATA(LEDS_BASE, 0x0);
+                }
+                display_number(ticking);
+                break;
+            case ST_GAMEOVER:
+                play_audio();
+                break;
+            case ST_DEFUSED:
+                break;
+            default:
+                break;
+        }
+    };
+    return 0;
+}
+
+void choose_audio(STATE state){
+   
+    switch (state){
+        case ST_PLANTING:
+            pPlaying = pBuf + offset;
+            PlayLen = 0 + offset;
+            cliplength = onesec*3.75;
+            break;
+        case ST_PLANTED:
+            pPlaying = pBuf + 7*onesec + offset; //1000000 == plus 10 seconds
+            PlayLen = 7*onesec + offset;
+            cliplength = onesec*45.2;
+            break;
+        case ST_DEFUSING:
+            pPlaying = pBuf + 5*onesec + offset;
+            PlayLen = 5*onesec + offset;
+            cliplength = onesec*0.55;
+            break;
+        case ST_GAMEOVER:
+            pPlaying = pBuf + 54*onesec + offset;
+            PlayLen = 54*onesec + offset;
+            cliplength = onesec*4.50;
+            break;
+        // case ST_DEFUSED:
+        //     pPlaying = pBuf + 60*onesec + offset;
+        //     PlayLen = 60*onesec + offset;
+        //     cliplength = onesec*3.20;
+        //     break;
+        default:
+            pPlaying = pBuf;
+            PlayLen = 0;
+            cliplength = 0;
+            break;
+    }
+    startclip = PlayLen;
+}
+
+
+
+void play_audio(){
+    if ((PlayLen-startclip) < cliplength){
+        // continue playing
+        int i = 0;
+        while ((i < PLAY_BLOCK_SIZE)){
+            try_cnt = 0;                
+            while (!AUDIO_DacFifoNotFull() && try_cnt < MAX_TRY_CNT){  // wait while full
+                try_cnt++;
+            }    
+            data = *pPlaying++;
+            if (state == ST_DEFUSING){
+                if ((beepPlayLen-beepstartclip) < beepcliplength){
+                    beepdata = *beeppPlaying++;
+                    data = data + beepdata;
+                    beepPlayLen++;
+                }
+            }
+            //data = 0;
+            ch_left = data >> 16;
+            ch_right = data & 0xFFFF;
+            AUDIO_DacFifoSetData(ch_left, ch_right);  
+            i++;
+            PlayLen++;
+            //printf("[%d] %d/%d\n", PlayLen, (short)((data >> 16) & 0xFFFF), (short)(data & 0xFFFF));
+        }  
+    }
+}
+
+bool init_audio(AUDIO_FUNC audio_func){
+    bool bSuccess = TRUE;
+    AUDIO_InterfaceActive(FALSE);
+    if (audio_func == LINEIN_RECORD){
+        AUDIO_SetInputSource(SOURCE_LINEIN);
+        AUDIO_DacEnableSoftMute(TRUE);
+        AUDIO_AdcEnableHighPassFilter(FALSE);
+        AUDIO_MicMute(TRUE);
+        AUDIO_LineInMute(FALSE);
+        AUDIO_SetLineInVol(0x17, 0x17);  // max 0x1F, min:0; 0x17: 0dB (assume max input is 2.0v rms)
+    }else if (audio_func == LINEOUT_PLAY){
+        AUDIO_DacEnableSoftMute(TRUE);
+        AUDIO_MicBoost(FALSE);   
+        AUDIO_MicMute(TRUE);
+        AUDIO_LineInMute(FALSE);
+        AUDIO_DacEnableSoftMute(FALSE);
+        //AUDIO_DacDeemphasisControl(DEEMPHASIS_48K);
+        AUDIO_SetLineOutVol(LINEOUT_DEFUALT_VOL, LINEOUT_DEFUALT_VOL); // max 7F, min: 30, 0x79: 0 db
+        AUDIO_DacEnableSoftMute(FALSE);
+    }
+    AUDIO_SetSampleRate(RATE_ADC96K_DAC96K);
+    AUDIO_InterfaceActive(TRUE);
+    return bSuccess;             
+}
+
+bool init(void){
+    bool bSuccess = TRUE;
+    // prepare    
+    if (!AUDIO_Init()){
+        printf("Audio Init Error\n");
+        bSuccess = FALSE;
+    }
+    return bSuccess;
+}
+
+void init_timer_interrupt( void ){
+	// Register the ISR with HAL
+	alt_irq_register(TIMER_0_IRQ, NULL, (void *)timer_isr);
+	// Start the timer
+	IOWR_ALTERA_AVALON_TIMER_CONTROL(TIMER_0_BASE, ALTERA_AVALON_TIMER_CONTROL_CONT_MSK
+			                                   | ALTERA_AVALON_TIMER_CONTROL_START_MSK
+											   | ALTERA_AVALON_TIMER_CONTROL_ITO_MSK);
+}
+
+static void timer_isr( void * context, alt_u32 id ){
+	static int count = 0;
+	// Clear the interrupt
+	IOWR_ALTERA_AVALON_TIMER_STATUS(TIMER_0_BASE, 0);
+	count++;
+	if (count % numberOfInterrupts == 0){
+		if (state == ST_ATTACK){
+			countdown--;
+		} else if (state == ST_PLANTING){
+			countdown--;
+			planting++;
+		} else if (state == ST_PLANTED){
+			ticking--;
+			display_number(ticking);
+			defusing = 0;
+		} else if (state == ST_DEFUSING){
+			ticking--;
+			defusing++;
+			display_number(ticking);
+		}
+	}
+}
+
+void display_number(int number){
+	int ognumber = number;
+	int numbers[6];
+	number = number%1000000;
+	for (int i = 0; i<6; i++){
+		numbers[i] = convert_to_seg(number/(pow(10,(5-i))));
+		number = number%(int)(pow(10,(5-i)));
+	}
+	if (ognumber<1000){
+		numbers[0] = 0x7F;
+		numbers[1] = 0x7F;
+		numbers[2] = 0x7F;
+	}
+	if (ognumber<100){
+		numbers[3] = 0x7F;
+	}
+	if (ognumber<10){
+		numbers[4] = 0x7f;
+	}
+	if (ognumber == 0){
+		for(int i = 0; i<6; i++){
+			numbers[i] = 0x3F;
+		}
+	}
+	IOWR_ALTERA_AVALON_PIO_DATA(HEX210_BASE, (numbers[3]<<14) | (numbers[4]<<7) | numbers[5]);
+	//IOWR_ALTERA_AVALON_PIO_DATA(HEX543_BASE, (numbers[0]<<14) | (numbers[1]<<7) | numbers[2]);
+}
+
+int convert_to_seg(int number){
+	switch (number){
+		case 0:
+			return 0x40;
+		case 1:
+			return 0x79;
+		case 2:
+			return 0x24;
+		case 3:
+			return 0x30;
+		case 4:
+			return 0x19;
+		case 5:
+			return 0x12;
+		case 6:
+			return 0x02;
+		case 7:
+			return 0x78;
+		case 8:
+			return 0x00;
+		case 9:
+			return 0x10;
+        default:
+            return 0x00;
+	}
+}
+
+int plantled(int number){
+	switch (number){
+		case 0:
+			return 0x03;
+		case 1:
+			return 0xF;
+		case 2:
+			return 0x3F;
+		case 3:
+			return 0xFF;
+		case 4:
+			return 0x3FF;
+        default:
+            return 0x00;
+	}
+}
+int defuseled(int number){
+	switch (number){
+		case 0:
+			return 0x01;
+		case 1:
+			return 0x03;
+		case 2:
+			return 0x07;
+		case 3:
+			return 0x1F;
+		case 4:
+			return 0x7F;
+		case 5:
+			return 0xFF;
+		case 6:
+			return 0x1FF;
+		case 7:
+			return 0x3FF;
+        default:
+            return 0x00;
+	}
+}
+
+
+void sendConnect(){
+	char wrapper[20] = "connect()\r\n";
+	printf("Sent connect command\n");
+	alt_up_rs232_enable_read_interrupt(rs232_dev);
+	int i;
+	for (i = 0; i < strlen(wrapper); i++) {
+		alt_up_rs232_write_data(rs232_dev, wrapper[i]);
+
+	}
+	alt_up_rs232_disable_read_interrupt(rs232_dev);
+}
+
+void sendmsg(char* msg) {
+    char wrapper[100];
+    strcpy(wrapper, "sendServer('");
+    strcat(wrapper, msg);
+    strcat(wrapper, "')\r\n");
+    printf("Sending: %s\n", msg);
+    alt_up_rs232_enable_read_interrupt(rs232_dev);
+    int i;
+    for (i = 0; i < strlen(wrapper); i++) {
+        alt_up_rs232_write_data(rs232_dev, wrapper[i]);
+
+    }
+    alt_up_rs232_disable_read_interrupt(rs232_dev);
+    //read();
+
+}
+
+void readfromlua(){
+	if (alt_up_rs232_get_used_space_in_read_FIFO(rs232_dev) > 0) {
+		alt_up_rs232_read_data(rs232_dev, &readdata, &parity_error);
+
+
+        printf("%c", readdata);
+		if (readdata == '>'){
+			readabledata = 0;
+		}
+		if (readabledata){
+			totaldata[datalen] = readdata;
+			datalen++;
+			//printf("%c",readdata);
+		}
+		if (datalen == 2){
+			readabledata = 0;
+		}
+
+		if (readdata == '<'){
+			datalen=0;
+			readabledata = 1;
+		}
+	}
+}

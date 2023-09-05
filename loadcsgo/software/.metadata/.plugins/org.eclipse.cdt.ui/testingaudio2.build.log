@@ -1,0 +1,6 @@
+07:58:01 **** Clean-only build of configuration Nios II for project testingaudio2 ****
+make clean 
+[testingaudio2 clean complete]
+
+07:58:01 Build Finished (took 516ms)
+
