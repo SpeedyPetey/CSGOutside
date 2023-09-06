@@ -8,6 +8,7 @@ How it works<br>
 -Players are divided into two teams - Planters or Defusers.<br>
 -Planters must attempt to activate the bomb while Defusers attempt to deactivate it.<br>
 -Players on both teams try to achieve their objective while using their phones to eliminate the other team.<br>
+Video Demo: https://www.youtube.com/watch?v=K6eeIqW7eI4
 
 ## Cloud Component Server - Srijan
 Docker Container Setup<br>
